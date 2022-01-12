@@ -13,15 +13,11 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
-    //let state = State::init();
-
     let addr = SocketAddr::from(([127, 0, 0, 1], 5000));
 
     let state = Arc::new(State::init());
 
     let make_svc = make_service_fn(|_conn| {
-        //let dictionary = state.Dictionary.clone();
-
         let state = state.clone();
 
         async move {

@@ -1,49 +1,32 @@
-#[path = "services/dictionary.rs"]
+mod app;
 mod dictionary;
-mod router;
-mod state;
+mod flows;
+mod http;
 
-use crate::state::State;
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
-use hyper::service::{make_service_fn, service_fn};
-use hyper::Server;
-use std::convert::Infallible;
-use std::net::SocketAddr;
-use std::sync::Arc;
+use my_http_server::{middlewares::swagger::SwaggerMiddleware, MyHttpServer};
 
 #[tokio::main]
 async fn main() {
-    let addr = SocketAddr::from(([127, 0, 0, 1], 5000));
+    let app = crate::app::AppContext::new();
+    let app = Arc::new(app);
 
-    let state = Arc::new(State::init());
+    let mut http_server: MyHttpServer = MyHttpServer::new(SocketAddr::from(([0, 0, 0, 0], 5000)));
 
-    let make_svc = make_service_fn(|_conn| {
-        let state = state.clone();
+    let controllers = Arc::new(crate::http::controllers_builder::build(app.clone()));
 
-        async move {
-            Ok::<_, Infallible>(service_fn(move |f| {
-                let state = state.clone();
-                router::router_service(f, state)
-            }))
-        }
-    });
+    let swagger = SwaggerMiddleware::new(
+        controllers.clone(),
+        "Dictionary".to_string(),
+        "1.0.0".to_string(),
+    );
+    http_server.add_middleware(controllers);
+    http_server.add_middleware(Arc::new(swagger));
 
-    let server = Server::bind(&addr).serve(make_svc);
+    http_server.start(app);
 
-    println!("Listening on http://{}", addr);
-
-    let graceful_shutdown = server.with_graceful_shutdown(shutdown_signal());
-
-    // Run this server for... forever!
-    if let Err(e) = graceful_shutdown.await {
-        eprintln!("server error: {}", e);
+    loop {
+        tokio::time::sleep(Duration::from_secs(10)).await;
     }
-}
-
-async fn shutdown_signal() {
-    tokio::signal::ctrl_c()
-        .await
-        .expect("Main.shutdown_signal - failed to install CTRL+C signal handler");
-
-    println!("Server shutting down")
 }
